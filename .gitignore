@@ -22,4 +22,6 @@ src/config.ts
 coverage
 
 
-dist/*
+dist/
+
+package-lock.json

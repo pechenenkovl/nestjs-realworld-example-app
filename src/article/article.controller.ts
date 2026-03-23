@@ -1,12 +1,18 @@
 import {Get, Post, Body, Put, Delete, Query, Param, Controller} from '@nestjs/common';
 import { Request } from 'express';
 import { ArticleService } from './article.service';
-import { CreateArticleDto, CreateCommentDto } from './dto';
+import {
+  CreateArticleDto,
+  CreateArticleRequestDto,
+  CreateCommentDto,
+  CreateCommentRequestDto,
+} from './dto';
 import { ArticlesRO, ArticleRO } from './article.interface';
 import { CommentsRO } from './article.interface';
 import { User } from '../user/user.decorator';
 
 import {
+  ApiBody,
   ApiBearerAuth,
   ApiResponse,
   ApiOperation, ApiTags,
@@ -49,6 +55,7 @@ export class ArticleController {
   @ApiResponse({ status: 201, description: 'The article has been successfully created.'})
   @ApiResponse({ status: 403, description: 'Forbidden.' })
   @Post()
+  @ApiBody({ type: CreateArticleRequestDto })
   async create(@User('id') userId: number, @Body('article') articleData: CreateArticleDto) {
     return this.articleService.create(userId, articleData);
   }
@@ -57,6 +64,7 @@ export class ArticleController {
   @ApiResponse({ status: 201, description: 'The article has been successfully updated.'})
   @ApiResponse({ status: 403, description: 'Forbidden.' })
   @Put(':slug')
+  @ApiBody({ type: CreateArticleRequestDto })
   async update(@Param() params, @Body('article') articleData: CreateArticleDto) {
     // Todo: update slug also when title gets changed
     return this.articleService.update(params.slug, articleData);
@@ -74,6 +82,7 @@ export class ArticleController {
   @ApiResponse({ status: 201, description: 'The comment has been successfully created.'})
   @ApiResponse({ status: 403, description: 'Forbidden.' })
   @Post(':slug/comments')
+  @ApiBody({ type: CreateCommentRequestDto })
   async createComment(@Param('slug') slug, @Body('comment') commentData: CreateCommentDto) {
     return await this.articleService.addComment(slug, commentData);
   }
