@@ -2,13 +2,20 @@ import { Get, Post, Body, Put, Delete, Param, Controller, UsePipes } from '@nest
 import { Request } from 'express';
 import { UserService } from './user.service';
 import { UserRO } from './user.interface';
-import { CreateUserDto, UpdateUserDto, LoginUserDto } from './dto';
+import {
+  CreateUserDto,
+  CreateUserRequestDto,
+  UpdateUserDto,
+  UpdateUserRequestDto,
+  LoginUserDto,
+  LoginUserRequestDto,
+} from './dto';
 import { HttpException } from '@nestjs/common/exceptions/http.exception';
 import { User } from './user.decorator';
 import { ValidationPipe } from '../shared/pipes/validation.pipe';
 
 import {
-  ApiBearerAuth, ApiTags
+  ApiBearerAuth, ApiBody, ApiTags
 } from '@nestjs/swagger';
 
 @ApiBearerAuth()
@@ -24,12 +31,14 @@ export class UserController {
   }
 
   @Put('user')
+  @ApiBody({ type: UpdateUserRequestDto })
   async update(@User('id') userId: number, @Body('user') userData: UpdateUserDto) {
     return await this.userService.update(userId, userData);
   }
 
   @UsePipes(new ValidationPipe())
   @Post('users')
+  @ApiBody({ type: CreateUserRequestDto })
   async create(@Body('user') userData: CreateUserDto) {
     return this.userService.create(userData);
   }
@@ -41,6 +50,7 @@ export class UserController {
 
   @UsePipes(new ValidationPipe())
   @Post('users/login')
+  @ApiBody({ type: LoginUserRequestDto })
   async login(@Body('user') loginUserDto: LoginUserDto): Promise<UserRO> {
     const _user = await this.userService.findOne(loginUserDto);
 
