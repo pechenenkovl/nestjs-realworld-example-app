@@ -121,7 +121,7 @@ describe('UserController', () => {
     });
 
     it('should throw HttpException 401 when user is not found', async () => {
-      userService.findOne.mockResolvedValue(null);
+      userService.findOne.mockResolvedValue(null as any);
 
       const dto = { email: 'wrong@example.com', password: 'password123' };
 

@@ -219,7 +219,7 @@ describe('ArticleService', () => {
       userRepository.findOne.mockResolvedValue(author);
       userRepository.save.mockResolvedValue(author);
 
-      const dto = { title: 'No Tags', description: 'desc', body: 'body', tagList: undefined };
+      const dto = { title: 'No Tags', description: 'desc', body: 'body', tagList: undefined } as any;
       const result = await service.create(1, dto);
 
       expect(result.tagList).toEqual([]);
