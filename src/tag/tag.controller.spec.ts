@@ -1,40 +1,49 @@
-import { Test } from '@nestjs/testing';
+import { Test, TestingModule } from '@nestjs/testing';
 import { TagController } from './tag.controller';
 import { TagService } from './tag.service';
-import {TypeOrmModule} from "@nestjs/typeorm";
-import {TagEntity} from "./tag.entity";
+import { TagEntity } from './tag.entity';
+
+const mockTagService = () => ({
+  findAll: jest.fn(),
+});
 
 describe('TagController', () => {
   let tagController: TagController;
-  let tagService: TagService;
+  let tagService: jest.Mocked<TagService>;
 
   beforeEach(async () => {
-    const module = await Test.createTestingModule({
-      imports: [TypeOrmModule.forRoot(), TypeOrmModule.forFeature([TagEntity])],
+    const module: TestingModule = await Test.createTestingModule({
       controllers: [TagController],
-      providers: [TagService],
+      providers: [{ provide: TagService, useFactory: mockTagService }],
     }).compile();
 
-    tagService = module.get<TagService>(TagService);
+    tagService = module.get(TagService);
     tagController = module.get<TagController>(TagController);
   });
 
   describe('findAll', () => {
     it('should return an array of tags', async () => {
-      const tags : TagEntity[] = [];
+      const tags: TagEntity[] = [];
       const createTag = (id, name) => {
         const tag = new TagEntity();
         tag.id = id;
         tag.tag = name;
         return tag;
-      }
+      };
       tags.push(createTag(1, 'angularjs'));
       tags.push(createTag(2, 'reactjs'));
 
-      jest.spyOn(tagService, 'findAll').mockImplementation(() => Promise.resolve(tags));
-      
+      tagService.findAll.mockResolvedValue(tags);
+
       const findAllResult = await tagController.findAll();
       expect(findAllResult).toBe(tags);
+    });
+
+    it('should return empty array when no tags exist', async () => {
+      tagService.findAll.mockResolvedValue([]);
+
+      const result = await tagController.findAll();
+      expect(result).toEqual([]);
     });
   });
 });
