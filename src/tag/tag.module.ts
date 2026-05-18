@@ -1,12 +1,12 @@
-import {MiddlewareConsumer, Module, NestModule, RequestMethod} from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import {MiddlewareConsumer, Module, NestModule} from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
 import { UserModule } from '../user/user.module';
 import { TagService } from './tag.service';
-import { TagEntity } from './tag.entity';
+import { Tag, TagSchema } from './tag.schema';
 import { TagController } from './tag.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([TagEntity]), UserModule],
+  imports: [MongooseModule.forFeature([{ name: Tag.name, schema: TagSchema }]), UserModule],
   providers: [TagService],
   controllers: [
     TagController

@@ -1,204 +1,188 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, getRepository, DeleteResult } from 'typeorm';
-import { ArticleEntity } from './article.entity';
-import { Comment } from './comment.entity';
-import { UserEntity } from '../user/user.entity';
-import { FollowsEntity } from '../profile/follows.entity';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Article, ArticleDocument } from './article.schema';
+import { User, UserDocument } from '../user/user.schema';
+import { Follow, FollowDocument } from '../profile/follow.schema';
 import { CreateArticleDto } from './dto';
 
-import {ArticleRO, ArticlesRO, CommentsRO} from './article.interface';
+import { ArticleRO, ArticlesRO, CommentsRO } from './article.interface';
 const slug = require('slug');
 
 @Injectable()
 export class ArticleService {
   constructor(
-    @InjectRepository(ArticleEntity)
-    private readonly articleRepository: Repository<ArticleEntity>,
-    @InjectRepository(Comment)
-    private readonly commentRepository: Repository<Comment>,
-    @InjectRepository(UserEntity)
-    private readonly userRepository: Repository<UserEntity>,
-    @InjectRepository(FollowsEntity)
-    private readonly followsRepository: Repository<FollowsEntity>
+    @InjectModel(Article.name)
+    private readonly articleModel: Model<ArticleDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
+    @InjectModel(Follow.name)
+    private readonly followModel: Model<FollowDocument>
   ) {}
 
   async findAll(query): Promise<ArticlesRO> {
-
-    const qb = await getRepository(ArticleEntity)
-      .createQueryBuilder('article')
-      .leftJoinAndSelect('article.author', 'author');
-
-    qb.where("1 = 1");
+    const filter: any = {};
 
     if ('tag' in query) {
-      qb.andWhere("article.tagList LIKE :tag", { tag: `%${query.tag}%` });
+      filter.tagList = { $in: [query.tag] };
     }
 
     if ('author' in query) {
-      const author = await this.userRepository.findOne({username: query.author});
-      qb.andWhere("article.authorId = :id", { id: author.id });
+      const author = await this.userModel.findOne({ username: query.author }).exec();
+      if (author) {
+        filter.author = author._id;
+      }
     }
 
     if ('favorited' in query) {
-      const author = await this.userRepository.findOne({username: query.favorited});
-      const ids = author.favorites.map(el => el.id);
-      qb.andWhere("article.authorId IN (:ids)", { ids });
+      const user = await this.userModel.findOne({ username: query.favorited }).exec();
+      if (user && user.favorites && user.favorites.length > 0) {
+        filter._id = { $in: user.favorites };
+      }
     }
 
-    qb.orderBy('article.created', 'DESC');
+    const articlesCount = await this.articleModel.countDocuments(filter).exec();
 
-    const articlesCount = await qb.getCount();
+    let queryBuilder = this.articleModel.find(filter)
+      .populate('author')
+      .sort({ createdAt: -1 });
 
     if ('limit' in query) {
-      qb.limit(query.limit);
+      queryBuilder = queryBuilder.limit(Number(query.limit));
     }
 
     if ('offset' in query) {
-      qb.offset(query.offset);
+      queryBuilder = queryBuilder.skip(Number(query.offset));
     }
 
-    const articles = await qb.getMany();
+    const articles = await queryBuilder.exec();
 
-    return {articles, articlesCount};
+    return { articles, articlesCount };
   }
 
-  async findFeed(userId: number, query): Promise<ArticlesRO> {
-    const _follows = await this.followsRepository.find( {followerId: userId});
+  async findFeed(userId: any, query): Promise<ArticlesRO> {
+    const _follows = await this.followModel.find({ followerId: userId } as any).exec();
 
     if (!(Array.isArray(_follows) && _follows.length > 0)) {
-      return {articles: [], articlesCount: 0};
+      return { articles: [], articlesCount: 0 };
     }
 
     const ids = _follows.map(el => el.followingId);
 
-    const qb = await getRepository(ArticleEntity)
-      .createQueryBuilder('article')
-      .where('article.authorId IN (:ids)', { ids });
+    const filter = { author: { $in: ids } };
 
-    qb.orderBy('article.created', 'DESC');
+    const articlesCount = await this.articleModel.countDocuments(filter).exec();
 
-    const articlesCount = await qb.getCount();
+    let queryBuilder = this.articleModel.find(filter)
+      .sort({ createdAt: -1 });
 
     if ('limit' in query) {
-      qb.limit(query.limit);
+      queryBuilder = queryBuilder.limit(Number(query.limit));
     }
 
     if ('offset' in query) {
-      qb.offset(query.offset);
+      queryBuilder = queryBuilder.skip(Number(query.offset));
     }
 
-    const articles = await qb.getMany();
+    const articles = await queryBuilder.exec();
 
-    return {articles, articlesCount};
+    return { articles, articlesCount };
   }
 
   async findOne(where): Promise<ArticleRO> {
-    const article = await this.articleRepository.findOne(where);
-    return {article};
+    const article = await this.articleModel.findOne(where).populate('author').exec();
+    return { article };
   }
 
   async addComment(slug: string, commentData): Promise<ArticleRO> {
-    let article = await this.articleRepository.findOne({slug});
+    const article = await this.articleModel.findOneAndUpdate(
+      { slug },
+      { $push: { comments: { body: commentData.body } } },
+      { new: true }
+    ).populate('author').exec();
 
-    const comment = new Comment();
-    comment.body = commentData.body;
-
-    article.comments.push(comment);
-
-    await this.commentRepository.save(comment);
-    article = await this.articleRepository.save(article);
-    return {article}
+    return { article };
   }
 
   async deleteComment(slug: string, id: string): Promise<ArticleRO> {
-    let article = await this.articleRepository.findOne({slug});
+    const article = await this.articleModel.findOneAndUpdate(
+      { slug },
+      { $pull: { comments: { _id: id } } },
+      { new: true }
+    ).populate('author').exec();
 
-    const comment = await this.commentRepository.findOne(id);
-    const deleteIndex = article.comments.findIndex(_comment => _comment.id === comment.id);
-
-    if (deleteIndex >= 0) {
-      const deleteComments = article.comments.splice(deleteIndex, 1);
-      await this.commentRepository.delete(deleteComments[0].id);
-      article =  await this.articleRepository.save(article);
-      return {article};
-    } else {
-      return {article};
-    }
-
+    return { article };
   }
 
-  async favorite(id: number, slug: string): Promise<ArticleRO> {
-    let article = await this.articleRepository.findOne({slug});
-    const user = await this.userRepository.findOne(id);
+  async favorite(id: any, slug: string): Promise<ArticleRO> {
+    const article = await this.articleModel.findOne({ slug }).exec();
+    const user = await this.userModel.findById(id).exec();
 
-    const isNewFavorite = user.favorites.findIndex(_article => _article.id === article.id) < 0;
+    const isNewFavorite = !user.favorites.some(fav => fav.toString() === article._id.toString());
     if (isNewFavorite) {
-      user.favorites.push(article);
+      user.favorites.push(article._id);
       article.favoriteCount++;
 
-      await this.userRepository.save(user);
-      article = await this.articleRepository.save(article);
+      await user.save();
+      await article.save();
     }
 
-    return {article};
+    return { article };
   }
 
-  async unFavorite(id: number, slug: string): Promise<ArticleRO> {
-    let article = await this.articleRepository.findOne({slug});
-    const user = await this.userRepository.findOne(id);
+  async unFavorite(id: any, slug: string): Promise<ArticleRO> {
+    const article = await this.articleModel.findOne({ slug }).exec();
+    const user = await this.userModel.findById(id).exec();
 
-    const deleteIndex = user.favorites.findIndex(_article => _article.id === article.id);
+    const deleteIndex = user.favorites.findIndex(fav => fav.toString() === article._id.toString());
 
     if (deleteIndex >= 0) {
-
       user.favorites.splice(deleteIndex, 1);
       article.favoriteCount--;
 
-      await this.userRepository.save(user);
-      article = await this.articleRepository.save(article);
+      await user.save();
+      await article.save();
     }
 
-    return {article};
+    return { article };
   }
 
   async findComments(slug: string): Promise<CommentsRO> {
-    const article = await this.articleRepository.findOne({slug});
-    return {comments: article.comments};
+    const article = await this.articleModel.findOne({ slug }).exec();
+    return { comments: article.comments };
   }
 
-  async create(userId: number, articleData: CreateArticleDto): Promise<ArticleEntity> {
+  async create(userId: any, articleData: CreateArticleDto): Promise<ArticleDocument> {
+    const newArticle = new this.articleModel();
+    newArticle.title = articleData.title;
+    newArticle.description = articleData.description;
+    newArticle.slug = this.slugify(articleData.title);
+    newArticle.tagList = articleData.tagList || [];
+    newArticle.comments = [];
+    newArticle.author = userId as any;
 
-    let article = new ArticleEntity();
-    article.title = articleData.title;
-    article.description = articleData.description;
-    article.slug = this.slugify(articleData.title);
-    article.tagList = articleData.tagList || [];
-    article.comments = [];
+    const savedArticle = await newArticle.save();
 
-    const newArticle = await this.articleRepository.save(article);
+    await this.userModel.findByIdAndUpdate(userId, { $push: { articles: savedArticle._id } }).exec();
 
-    const author = await this.userRepository.findOne({ where: { id: userId }, relations: ['articles'] });
-    author.articles.push(article);
-
-    await this.userRepository.save(author);
-
-    return newArticle;
-
+    return savedArticle;
   }
 
   async update(slug: string, articleData: any): Promise<ArticleRO> {
-    let toUpdate = await this.articleRepository.findOne({ slug: slug});
-    let updated = Object.assign(toUpdate, articleData);
-    const article = await this.articleRepository.save(updated);
-    return {article};
+    const article = await this.articleModel.findOneAndUpdate(
+      { slug },
+      { $set: articleData },
+      { new: true }
+    ).populate('author').exec();
+
+    return { article };
   }
 
-  async delete(slug: string): Promise<DeleteResult> {
-    return await this.articleRepository.delete({ slug: slug});
+  async delete(slug: string): Promise<any> {
+    return await this.articleModel.deleteOne({ slug }).exec();
   }
 
   slugify(title: string) {
-    return slug(title, {lower: true}) + '-' + (Math.random() * Math.pow(36, 6) | 0).toString(36)
+    return slug(title, { lower: true }) + '-' + (Math.random() * Math.pow(36, 6) | 0).toString(36);
   }
 }

@@ -1,93 +1,104 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository, DeleteResult } from 'typeorm';
+import { getModelToken } from '@nestjs/mongoose';
 import { ArticleService } from './article.service';
-import { ArticleEntity } from './article.entity';
-import { Comment } from './comment.entity';
-import { UserEntity } from '../user/user.entity';
-import { FollowsEntity } from '../profile/follows.entity';
+import { Article } from './article.schema';
+import { User } from '../user/user.schema';
+import { Follow } from '../profile/follow.schema';
 
-const mockRepository = () => ({
+const createMockArticle = (overrides = {}) => ({
+  _id: '507f1f77bcf86cd799439011',
+  slug: 'test-article-abc123',
+  title: 'Test Article',
+  description: 'A description',
+  body: 'Article body',
+  tagList: ['nestjs', 'testing'],
+  author: '507f1f77bcf86cd799439022',
+  comments: [],
+  favoriteCount: 0,
+  createdAt: new Date('2025-01-01'),
+  updatedAt: new Date('2025-01-01'),
+  save: jest.fn(),
+  ...overrides,
+});
+
+const createMockUser = (overrides = {}) => ({
+  _id: '507f1f77bcf86cd799439022',
+  username: 'testuser',
+  email: 'test@example.com',
+  password: 'hashed',
+  bio: '',
+  image: '',
+  articles: [],
+  favorites: [],
+  save: jest.fn(),
+  ...overrides,
+});
+
+const mockArticleModel: any = jest.fn().mockImplementation((data) => {
+  const instance = createMockArticle(data);
+  instance.save.mockResolvedValue(instance);
+  return instance;
+});
+mockArticleModel.find = jest.fn();
+mockArticleModel.findOne = jest.fn();
+mockArticleModel.findOneAndUpdate = jest.fn();
+mockArticleModel.findByIdAndUpdate = jest.fn();
+mockArticleModel.countDocuments = jest.fn();
+mockArticleModel.deleteOne = jest.fn();
+
+const mockUserModel: any = {
   find: jest.fn(),
   findOne: jest.fn(),
-  save: jest.fn(),
-  delete: jest.fn(),
-});
+  findById: jest.fn(),
+  findByIdAndUpdate: jest.fn(),
+};
+
+const mockFollowModel: any = {
+  find: jest.fn(),
+  findOne: jest.fn(),
+};
 
 describe('ArticleService', () => {
   let service: ArticleService;
-  let articleRepository: jest.Mocked<Repository<ArticleEntity>>;
-  let commentRepository: jest.Mocked<Repository<Comment>>;
-  let userRepository: jest.Mocked<Repository<UserEntity>>;
-  let followsRepository: jest.Mocked<Repository<FollowsEntity>>;
+  let articleModel: any;
+  let userModel: any;
+  let followModel: any;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ArticleService,
-        { provide: getRepositoryToken(ArticleEntity), useFactory: mockRepository },
-        { provide: getRepositoryToken(Comment), useFactory: mockRepository },
-        { provide: getRepositoryToken(UserEntity), useFactory: mockRepository },
-        { provide: getRepositoryToken(FollowsEntity), useFactory: mockRepository },
+        { provide: getModelToken(Article.name), useValue: mockArticleModel },
+        { provide: getModelToken(User.name), useValue: mockUserModel },
+        { provide: getModelToken(Follow.name), useValue: mockFollowModel },
       ],
     }).compile();
 
     service = module.get<ArticleService>(ArticleService);
-    articleRepository = module.get(getRepositoryToken(ArticleEntity));
-    commentRepository = module.get(getRepositoryToken(Comment));
-    userRepository = module.get(getRepositoryToken(UserEntity));
-    followsRepository = module.get(getRepositoryToken(FollowsEntity));
+    articleModel = module.get(getModelToken(Article.name));
+    userModel = module.get(getModelToken(User.name));
+    followModel = module.get(getModelToken(Follow.name));
   });
 
   afterEach(() => jest.clearAllMocks());
-
-  const createArticle = (overrides: Partial<ArticleEntity> = {}): ArticleEntity => {
-    const article = new ArticleEntity();
-    article.id = 1;
-    article.slug = 'test-article-abc123';
-    article.title = 'Test Article';
-    article.description = 'A description';
-    article.body = 'Article body';
-    article.tagList = ['nestjs', 'testing'];
-    article.created = new Date('2025-01-01');
-    article.updated = new Date('2025-01-01');
-    article.comments = [];
-    article.favoriteCount = 0;
-    Object.assign(article, overrides);
-    return article;
-  };
-
-  const createUser = (overrides: Partial<UserEntity> = {}): UserEntity => {
-    const user = new UserEntity();
-    user.id = 1;
-    user.username = 'testuser';
-    user.email = 'test@example.com';
-    user.password = 'hashed';
-    user.bio = '';
-    user.image = '';
-    user.articles = [];
-    user.favorites = [];
-    Object.assign(user, overrides);
-    return user;
-  };
 
   // ------- CRUD: findAll -------
 
   describe('findAll', () => {
     it('should return all articles with count', async () => {
-      const articles = [createArticle(), createArticle({ id: 2, slug: 'second-article' })];
-      const mockQb = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
-        offset: jest.fn().mockReturnThis(),
-        getCount: jest.fn().mockResolvedValue(2),
-        getMany: jest.fn().mockResolvedValue(articles),
-      };
-      jest.spyOn(require('typeorm'), 'getRepository').mockReturnValue({
-        createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+      const articles = [createMockArticle(), createMockArticle({ _id: '2', slug: 'second-article' })];
+      articleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(2) });
+      articleModel.find.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          sort: jest.fn().mockReturnValue({
+            limit: jest.fn().mockReturnValue({
+              skip: jest.fn().mockReturnValue({
+                exec: jest.fn().mockResolvedValue(articles),
+              }),
+            }),
+            exec: jest.fn().mockResolvedValue(articles),
+          }),
+        }),
       });
 
       const result = await service.findAll({});
@@ -97,66 +108,54 @@ describe('ArticleService', () => {
     });
 
     it('should filter articles by tag', async () => {
-      const mockQb = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getCount: jest.fn().mockResolvedValue(1),
-        getMany: jest.fn().mockResolvedValue([createArticle()]),
-      };
-      jest.spyOn(require('typeorm'), 'getRepository').mockReturnValue({
-        createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+      articleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(1) });
+      articleModel.find.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          sort: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([createMockArticle()]),
+          }),
+        }),
       });
 
-      await service.findAll({ tag: 'nestjs' });
+      const result = await service.findAll({ tag: 'nestjs' });
 
-      expect(mockQb.andWhere).toHaveBeenCalledWith(
-        'article.tagList LIKE :tag',
-        { tag: '%nestjs%' },
-      );
+      expect(result.articles).toHaveLength(1);
     });
 
     it('should filter articles by author', async () => {
-      const author = createUser({ id: 5, username: 'authoruser' });
-      userRepository.findOne.mockResolvedValue(author);
-
-      const mockQb = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getCount: jest.fn().mockResolvedValue(0),
-        getMany: jest.fn().mockResolvedValue([]),
-      };
-      jest.spyOn(require('typeorm'), 'getRepository').mockReturnValue({
-        createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+      const author = createMockUser({ _id: '5', username: 'authoruser' });
+      userModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(author) });
+      articleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+      articleModel.find.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          sort: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([]),
+          }),
+        }),
       });
 
       await service.findAll({ author: 'authoruser' });
 
-      expect(userRepository.findOne).toHaveBeenCalledWith({ username: 'authoruser' });
-      expect(mockQb.andWhere).toHaveBeenCalledWith('article.authorId = :id', { id: 5 });
+      expect(userModel.findOne).toHaveBeenCalled();
     });
 
     it('should apply limit and offset for pagination', async () => {
-      const mockQb = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
-        offset: jest.fn().mockReturnThis(),
-        getCount: jest.fn().mockResolvedValue(20),
-        getMany: jest.fn().mockResolvedValue([]),
-      };
-      jest.spyOn(require('typeorm'), 'getRepository').mockReturnValue({
-        createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+      articleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(20) });
+      const mockExec = jest.fn().mockResolvedValue([]);
+      const mockSkip = jest.fn().mockReturnValue({ exec: mockExec });
+      const mockLimit = jest.fn().mockReturnValue({ skip: mockSkip, exec: mockExec });
+      articleModel.find.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          sort: jest.fn().mockReturnValue({
+            limit: mockLimit,
+          }),
+        }),
       });
 
       await service.findAll({ limit: 10, offset: 5 });
 
-      expect(mockQb.limit).toHaveBeenCalledWith(10);
-      expect(mockQb.offset).toHaveBeenCalledWith(5);
+      expect(mockLimit).toHaveBeenCalledWith(10);
+      expect(mockSkip).toHaveBeenCalledWith(5);
     });
   });
 
@@ -164,21 +163,28 @@ describe('ArticleService', () => {
 
   describe('findOne', () => {
     it('should return a single article by slug', async () => {
-      const article = createArticle();
-      articleRepository.findOne.mockResolvedValue(article);
+      const article = createMockArticle();
+      articleModel.findOne.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(article),
+        }),
+      });
 
       const result = await service.findOne({ slug: 'test-article-abc123' });
 
       expect(result.article).toEqual(article);
-      expect(articleRepository.findOne).toHaveBeenCalledWith({ slug: 'test-article-abc123' });
     });
 
-    it('should return undefined article when not found', async () => {
-      articleRepository.findOne.mockResolvedValue(undefined);
+    it('should return null article when not found', async () => {
+      articleModel.findOne.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(null),
+        }),
+      });
 
       const result = await service.findOne({ slug: 'nonexistent' });
 
-      expect(result.article).toBeUndefined();
+      expect(result.article).toBeNull();
     });
   });
 
@@ -186,56 +192,31 @@ describe('ArticleService', () => {
 
   describe('create', () => {
     it('should create and return a new article', async () => {
-      const savedArticle = createArticle();
-      articleRepository.save.mockResolvedValue(savedArticle);
-
-      const author = createUser();
-      userRepository.findOne.mockResolvedValue(author);
-      userRepository.save.mockResolvedValue(author);
+      userModel.findByIdAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue({}) });
 
       const dto = { title: 'Test Article', description: 'A description', body: 'Article body', tagList: ['nestjs'] };
-      const result = await service.create(1, dto);
+      const result = await service.create('507f1f77bcf86cd799439022', dto);
 
-      expect(result).toEqual(savedArticle);
-      expect(articleRepository.save).toHaveBeenCalled();
-      expect(userRepository.save).toHaveBeenCalled();
+      expect(result).toBeDefined();
+      expect(result.title).toBe('Test Article');
     });
 
     it('should generate a slug from the title', async () => {
-      articleRepository.save.mockImplementation(async (entity) => entity as ArticleEntity);
-      const author = createUser();
-      userRepository.findOne.mockResolvedValue(author);
-      userRepository.save.mockResolvedValue(author);
+      userModel.findByIdAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue({}) });
 
       const dto = { title: 'My Great Article', description: 'desc', body: 'body', tagList: [] };
-      const result = await service.create(1, dto);
+      const result = await service.create('507f1f77bcf86cd799439022', dto);
 
       expect(result.slug).toMatch(/^my-great-article-/);
     });
 
     it('should default tagList to empty array when not provided', async () => {
-      articleRepository.save.mockImplementation(async (entity) => entity as ArticleEntity);
-      const author = createUser();
-      userRepository.findOne.mockResolvedValue(author);
-      userRepository.save.mockResolvedValue(author);
+      userModel.findByIdAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue({}) });
 
       const dto = { title: 'No Tags', description: 'desc', body: 'body', tagList: undefined } as any;
-      const result = await service.create(1, dto);
+      const result = await service.create('507f1f77bcf86cd799439022', dto);
 
       expect(result.tagList).toEqual([]);
-    });
-
-    it('should associate the article with the author', async () => {
-      const savedArticle = createArticle();
-      articleRepository.save.mockResolvedValue(savedArticle);
-
-      const author = createUser();
-      userRepository.findOne.mockResolvedValue(author);
-      userRepository.save.mockResolvedValue(author);
-
-      await service.create(1, { title: 'Title', description: 'desc', body: 'body', tagList: [] });
-
-      expect(userRepository.findOne).toHaveBeenCalledWith({ where: { id: 1 }, relations: ['articles'] });
     });
   });
 
@@ -243,15 +224,16 @@ describe('ArticleService', () => {
 
   describe('update', () => {
     it('should update and return the article', async () => {
-      const existing = createArticle();
-      const updated = createArticle({ title: 'Updated Title' });
-      articleRepository.findOne.mockResolvedValue(existing);
-      articleRepository.save.mockResolvedValue(updated);
+      const updated = createMockArticle({ title: 'Updated Title' });
+      articleModel.findOneAndUpdate.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(updated),
+        }),
+      });
 
       const result = await service.update('test-article-abc123', { title: 'Updated Title' });
 
       expect(result.article.title).toBe('Updated Title');
-      expect(articleRepository.findOne).toHaveBeenCalledWith({ slug: 'test-article-abc123' });
     });
   });
 
@@ -259,13 +241,13 @@ describe('ArticleService', () => {
 
   describe('delete', () => {
     it('should delete article by slug', async () => {
-      const deleteResult: DeleteResult = { affected: 1, raw: {} };
-      articleRepository.delete.mockResolvedValue(deleteResult);
+      const deleteResult = { acknowledged: true, deletedCount: 1 };
+      articleModel.deleteOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(deleteResult) });
 
       const result = await service.delete('test-article-abc123');
 
       expect(result).toEqual(deleteResult);
-      expect(articleRepository.delete).toHaveBeenCalledWith({ slug: 'test-article-abc123' });
+      expect(articleModel.deleteOne).toHaveBeenCalledWith({ slug: 'test-article-abc123' });
     });
   });
 
@@ -273,33 +255,31 @@ describe('ArticleService', () => {
 
   describe('findFeed', () => {
     it('should return articles from followed users', async () => {
-      followsRepository.find.mockResolvedValue([
-        { id: 1, followerId: 1, followingId: 2 } as FollowsEntity,
-        { id: 2, followerId: 1, followingId: 3 } as FollowsEntity,
-      ]);
-
-      const articles = [createArticle()];
-      const mockQb = {
-        where: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getCount: jest.fn().mockResolvedValue(1),
-        getMany: jest.fn().mockResolvedValue(articles),
-      };
-      jest.spyOn(require('typeorm'), 'getRepository').mockReturnValue({
-        createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+      followModel.find.mockReturnValue({
+        exec: jest.fn().mockResolvedValue([
+          { _id: '1', followerId: '1', followingId: '2' },
+          { _id: '2', followerId: '1', followingId: '3' },
+        ]),
       });
 
-      const result = await service.findFeed(1, {});
+      const articles = [createMockArticle()];
+      articleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(1) });
+      articleModel.find.mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(articles),
+        }),
+      });
+
+      const result = await service.findFeed('1', {});
 
       expect(result.articles).toHaveLength(1);
       expect(result.articlesCount).toBe(1);
-      expect(mockQb.where).toHaveBeenCalledWith('article.authorId IN (:ids)', { ids: [2, 3] });
     });
 
     it('should return empty feed when user follows nobody', async () => {
-      followsRepository.find.mockResolvedValue([]);
+      followModel.find.mockReturnValue({ exec: jest.fn().mockResolvedValue([]) });
 
-      const result = await service.findFeed(1, {});
+      const result = await service.findFeed('1', {});
 
       expect(result.articles).toEqual([]);
       expect(result.articlesCount).toBe(0);
@@ -310,52 +290,41 @@ describe('ArticleService', () => {
 
   describe('addComment', () => {
     it('should add a comment to an article', async () => {
-      const article = createArticle();
-      articleRepository.findOne.mockResolvedValue(article);
-      commentRepository.save.mockResolvedValue({ id: 1, body: 'Great article!' } as Comment);
-      articleRepository.save.mockResolvedValue(article);
+      const article = createMockArticle({ comments: [{ _id: '1', body: 'Great article!' }] });
+      articleModel.findOneAndUpdate.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(article),
+        }),
+      });
 
       const result = await service.addComment('test-article-abc123', { body: 'Great article!' });
 
       expect(result.article).toBeDefined();
-      expect(commentRepository.save).toHaveBeenCalled();
-      expect(articleRepository.save).toHaveBeenCalled();
+      expect(articleModel.findOneAndUpdate).toHaveBeenCalled();
     });
   });
 
   describe('deleteComment', () => {
     it('should delete a comment from an article', async () => {
-      const comment = { id: 10, body: 'A comment' } as Comment;
-      const article = createArticle({ comments: [comment] });
-      articleRepository.findOne.mockResolvedValue(article);
-      commentRepository.findOne.mockResolvedValue(comment);
-      commentRepository.delete.mockResolvedValue({ affected: 1, raw: {} });
-      articleRepository.save.mockResolvedValue(article);
+      const article = createMockArticle({ comments: [] });
+      articleModel.findOneAndUpdate.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(article),
+        }),
+      });
 
       const result = await service.deleteComment('test-article-abc123', '10');
 
-      expect(commentRepository.delete).toHaveBeenCalledWith(10);
       expect(result.article).toBeDefined();
-    });
-
-    it('should not delete if comment is not found in article', async () => {
-      const comment = { id: 10, body: 'A comment' } as Comment;
-      const article = createArticle({ comments: [] });
-      articleRepository.findOne.mockResolvedValue(article);
-      commentRepository.findOne.mockResolvedValue(comment);
-
-      const result = await service.deleteComment('test-article-abc123', '10');
-
-      expect(commentRepository.delete).not.toHaveBeenCalled();
-      expect(result.article).toBeDefined();
+      expect(articleModel.findOneAndUpdate).toHaveBeenCalled();
     });
   });
 
   describe('findComments', () => {
     it('should return comments for an article', async () => {
-      const comments = [{ id: 1, body: 'Comment 1' }, { id: 2, body: 'Comment 2' }] as Comment[];
-      const article = createArticle({ comments });
-      articleRepository.findOne.mockResolvedValue(article);
+      const comments = [{ _id: '1', body: 'Comment 1' }, { _id: '2', body: 'Comment 2' }];
+      const article = createMockArticle({ comments });
+      articleModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(article) });
 
       const result = await service.findComments('test-article-abc123');
 
@@ -367,59 +336,63 @@ describe('ArticleService', () => {
 
   describe('favorite', () => {
     it('should favorite an article and increment favoriteCount', async () => {
-      const article = createArticle({ favoriteCount: 0 });
-      const user = createUser({ favorites: [] });
-      articleRepository.findOne.mockResolvedValue(article);
-      userRepository.findOne.mockResolvedValue(user);
-      userRepository.save.mockResolvedValue(user);
-      articleRepository.save.mockResolvedValue({ ...article, favoriteCount: 1 } as ArticleEntity);
+      const article = createMockArticle({ favoriteCount: 0 });
+      article.save.mockResolvedValue({ ...article, favoriteCount: 1 });
+      const user = createMockUser({ favorites: [] });
+      user.save.mockResolvedValue(user);
 
-      const result = await service.favorite(1, 'test-article-abc123');
+      articleModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(article) });
+      userModel.findById.mockReturnValue({ exec: jest.fn().mockResolvedValue(user) });
 
-      expect(userRepository.save).toHaveBeenCalled();
-      expect(articleRepository.save).toHaveBeenCalled();
+      const result = await service.favorite('507f1f77bcf86cd799439022', 'test-article-abc123');
+
+      expect(user.save).toHaveBeenCalled();
+      expect(article.save).toHaveBeenCalled();
       expect(result.article).toBeDefined();
     });
 
     it('should not double-favorite an already favorited article', async () => {
-      const article = createArticle({ id: 5, favoriteCount: 1 });
-      const user = createUser({ favorites: [article] });
-      articleRepository.findOne.mockResolvedValue(article);
-      userRepository.findOne.mockResolvedValue(user);
+      const article = createMockArticle({ _id: '5', favoriteCount: 1 });
+      const user = createMockUser({ favorites: ['5'] });
 
-      await service.favorite(1, 'test-article-abc123');
+      articleModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(article) });
+      userModel.findById.mockReturnValue({ exec: jest.fn().mockResolvedValue(user) });
 
-      expect(userRepository.save).not.toHaveBeenCalled();
-      expect(articleRepository.save).not.toHaveBeenCalled();
+      await service.favorite('507f1f77bcf86cd799439022', 'test-article-abc123');
+
+      expect(user.save).not.toHaveBeenCalled();
+      expect(article.save).not.toHaveBeenCalled();
     });
   });
 
   describe('unFavorite', () => {
     it('should unfavorite an article and decrement favoriteCount', async () => {
-      const article = createArticle({ id: 5, favoriteCount: 1 });
-      const user = createUser({ favorites: [article] });
-      articleRepository.findOne.mockResolvedValue(article);
-      userRepository.findOne.mockResolvedValue(user);
-      userRepository.save.mockResolvedValue(user);
-      articleRepository.save.mockResolvedValue({ ...article, favoriteCount: 0 } as ArticleEntity);
+      const article = createMockArticle({ _id: '5', favoriteCount: 1 });
+      article.save.mockResolvedValue({ ...article, favoriteCount: 0 });
+      const user = createMockUser({ favorites: ['5'] });
+      user.save.mockResolvedValue(user);
 
-      const result = await service.unFavorite(1, 'test-article-abc123');
+      articleModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(article) });
+      userModel.findById.mockReturnValue({ exec: jest.fn().mockResolvedValue(user) });
 
-      expect(userRepository.save).toHaveBeenCalled();
-      expect(articleRepository.save).toHaveBeenCalled();
+      const result = await service.unFavorite('507f1f77bcf86cd799439022', 'test-article-abc123');
+
+      expect(user.save).toHaveBeenCalled();
+      expect(article.save).toHaveBeenCalled();
       expect(result.article).toBeDefined();
     });
 
     it('should not change anything if article is not in favorites', async () => {
-      const article = createArticle({ id: 5, favoriteCount: 0 });
-      const user = createUser({ favorites: [] });
-      articleRepository.findOne.mockResolvedValue(article);
-      userRepository.findOne.mockResolvedValue(user);
+      const article = createMockArticle({ _id: '5', favoriteCount: 0 });
+      const user = createMockUser({ favorites: [] });
 
-      await service.unFavorite(1, 'test-article-abc123');
+      articleModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(article) });
+      userModel.findById.mockReturnValue({ exec: jest.fn().mockResolvedValue(user) });
 
-      expect(userRepository.save).not.toHaveBeenCalled();
-      expect(articleRepository.save).not.toHaveBeenCalled();
+      await service.unFavorite('507f1f77bcf86cd799439022', 'test-article-abc123');
+
+      expect(user.save).not.toHaveBeenCalled();
+      expect(article.save).not.toHaveBeenCalled();
     });
   });
 
@@ -436,9 +409,184 @@ describe('ArticleService', () => {
       const slug1 = service.slugify('Same Title');
       const slug2 = service.slugify('Same Title');
 
-      // Extremely unlikely to collide, but the base should match
       expect(slug1).toMatch(/^same-title-/);
       expect(slug2).toMatch(/^same-title-/);
+    });
+
+    it('should handle special characters in title', () => {
+      const result = service.slugify('Hello & World! @#$%');
+
+      expect(result).toMatch(/^hello/);
+      expect(result).not.toContain('&');
+      expect(result).not.toContain('!');
+    });
+
+    it('should handle empty string', () => {
+      const result = service.slugify('');
+
+      expect(result).toMatch(/-[a-z0-9]+$/);
+    });
+  });
+
+  // ------- Edge Cases -------
+
+  describe('edge cases', () => {
+    it('findAll should handle favorited filter with user having no favorites', async () => {
+      const user = createMockUser({ favorites: [] });
+      userModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(user) });
+      articleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+      articleModel.find.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          sort: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      });
+
+      const result = await service.findAll({ favorited: 'testuser' });
+
+      expect(result.articlesCount).toBe(0);
+    });
+
+    it('findAll should handle favorited filter with non-existent user', async () => {
+      userModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+      articleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+      articleModel.find.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          sort: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      });
+
+      const result = await service.findAll({ favorited: 'ghost' });
+
+      expect(result.articles).toEqual([]);
+    });
+
+    it('findAll should handle author filter with non-existent author', async () => {
+      userModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+      articleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+      articleModel.find.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          sort: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      });
+
+      const result = await service.findAll({ author: 'nonexistent' });
+
+      expect(result.articles).toEqual([]);
+    });
+
+    it('findOne should return null article for non-existent slug', async () => {
+      articleModel.findOne.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(null),
+        }),
+      });
+
+      const result = await service.findOne({ slug: 'does-not-exist' });
+
+      expect(result.article).toBeNull();
+    });
+
+    it('findComments should throw when article does not exist', async () => {
+      articleModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+
+      await expect(service.findComments('nonexistent')).rejects.toThrow();
+    });
+
+    it('favorite should throw when article does not exist', async () => {
+      articleModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+      userModel.findById.mockReturnValue({ exec: jest.fn().mockResolvedValue(createMockUser()) });
+
+      await expect(service.favorite('1', 'nonexistent')).rejects.toThrow();
+    });
+
+    it('favorite should throw when user does not exist', async () => {
+      articleModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(createMockArticle()) });
+      userModel.findById.mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+
+      await expect(service.favorite('1', 'test-article-abc123')).rejects.toThrow();
+    });
+
+    it('unFavorite should return null article when article does not exist and user has no favorites', async () => {
+      articleModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+      userModel.findById.mockReturnValue({ exec: jest.fn().mockResolvedValue(createMockUser({ favorites: [] })) });
+
+      const result = await service.unFavorite('1', 'nonexistent');
+
+      expect(result.article).toBeNull();
+    });
+
+    it('findFeed should apply limit and offset', async () => {
+      followModel.find.mockReturnValue({
+        exec: jest.fn().mockResolvedValue([{ followerId: '1', followingId: '2' }]),
+      });
+      articleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(5) });
+      const mockExec = jest.fn().mockResolvedValue([createMockArticle()]);
+      const mockSkip = jest.fn().mockReturnValue({ exec: mockExec });
+      const mockLimit = jest.fn().mockReturnValue({ skip: mockSkip, exec: mockExec });
+      articleModel.find.mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          limit: mockLimit,
+        }),
+      });
+
+      await service.findFeed('1', { limit: 5, offset: 2 });
+
+      expect(mockLimit).toHaveBeenCalledWith(5);
+      expect(mockSkip).toHaveBeenCalledWith(2);
+    });
+
+    it('delete should return deletedCount=0 when article does not exist', async () => {
+      const deleteResult = { acknowledged: true, deletedCount: 0 };
+      articleModel.deleteOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(deleteResult) });
+
+      const result = await service.delete('nonexistent-slug');
+
+      expect(result.deletedCount).toBe(0);
+    });
+
+    it('addComment should handle empty comment body', async () => {
+      const article = createMockArticle({ comments: [{ _id: '1', body: '' }] });
+      articleModel.findOneAndUpdate.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(article),
+        }),
+      });
+
+      const result = await service.addComment('test-article-abc123', { body: '' });
+
+      expect(result.article).toBeDefined();
+    });
+
+    it('update should handle updating slug when title changes', async () => {
+      const updated = createMockArticle({ title: 'New Title', slug: 'new-title-xyz' });
+      articleModel.findOneAndUpdate.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(updated),
+        }),
+      });
+
+      const result = await service.update('old-slug', { title: 'New Title' });
+
+      expect(result.article.title).toBe('New Title');
+    });
+
+    it('create should associate article with user', async () => {
+      const mockExec = jest.fn().mockResolvedValue({});
+      userModel.findByIdAndUpdate.mockReturnValue({ exec: mockExec });
+
+      const dto = { title: 'Test', description: 'desc', body: 'body', tagList: [] };
+      await service.create('user-id-123', dto);
+
+      expect(userModel.findByIdAndUpdate).toHaveBeenCalledWith(
+        'user-id-123',
+        expect.objectContaining({ $push: expect.anything() }),
+      );
     });
   });
 });

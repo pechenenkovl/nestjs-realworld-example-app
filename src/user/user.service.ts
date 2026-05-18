@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, getRepository, DeleteResult } from 'typeorm';
-import { UserEntity } from './user.entity';
-import {CreateUserDto, LoginUserDto, UpdateUserDto} from './dto';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { User, UserDocument } from './user.schema';
+import { CreateUserDto, LoginUserDto, UpdateUserDto } from './dto';
 const jwt = require('jsonwebtoken');
 import { SECRET } from '../config';
 import { UserRO } from './user.interface';
@@ -14,16 +14,16 @@ import * as argon2 from 'argon2';
 @Injectable()
 export class UserService {
   constructor(
-    @InjectRepository(UserEntity)
-    private readonly userRepository: Repository<UserEntity>
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>
   ) {}
 
-  async findAll(): Promise<UserEntity[]> {
-    return await this.userRepository.find();
+  async findAll(): Promise<UserDocument[]> {
+    return await this.userModel.find().exec();
   }
 
-  async findOne({email, password}: LoginUserDto): Promise<UserEntity> {
-    const user = await this.userRepository.findOne({email});
+  async findOne({ email, password }: LoginUserDto): Promise<UserDocument> {
+    const user = await this.userModel.findOne({ email }).exec();
     if (!user) {
       return null;
     }
@@ -38,22 +38,18 @@ export class UserService {
   async create(dto: CreateUserDto): Promise<UserRO> {
 
     // check uniqueness of username/email
-    const {username, email, password} = dto;
-    const qb = await getRepository(UserEntity)
-      .createQueryBuilder('user')
-      .where('user.username = :username', { username })
-      .orWhere('user.email = :email', { email });
-
-    const user = await qb.getOne();
+    const { username, email, password } = dto;
+    const user = await this.userModel.findOne({
+      $or: [{ username }, { email }]
+    }).exec();
 
     if (user) {
-      const errors = {username: 'Username and email must be unique.'};
-      throw new HttpException({message: 'Input data validation failed', errors}, HttpStatus.BAD_REQUEST);
-
+      const errors = { username: 'Username and email must be unique.' };
+      throw new HttpException({ message: 'Input data validation failed', errors }, HttpStatus.BAD_REQUEST);
     }
 
     // create new user
-    let newUser = new UserEntity();
+    const newUser = new this.userModel();
     newUser.username = username;
     newUser.email = email;
     newUser.password = password;
@@ -61,42 +57,37 @@ export class UserService {
 
     const errors = await validate(newUser);
     if (errors.length > 0) {
-      const _errors = {username: 'Userinput is not valid.'};
-      throw new HttpException({message: 'Input data validation failed', _errors}, HttpStatus.BAD_REQUEST);
-
+      const _errors = { username: 'Userinput is not valid.' };
+      throw new HttpException({ message: 'Input data validation failed', _errors }, HttpStatus.BAD_REQUEST);
     } else {
-      const savedUser = await this.userRepository.save(newUser);
+      const savedUser = await newUser.save();
       return this.buildUserRO(savedUser);
     }
-
   }
 
-  async update(id: number, dto: UpdateUserDto): Promise<UserEntity> {
-    let toUpdate = await this.userRepository.findOne(id);
-    delete toUpdate.password;
-    delete toUpdate.favorites;
-
-    let updated = Object.assign(toUpdate, dto);
-    return await this.userRepository.save(updated);
+  async update(id: number, dto: UpdateUserDto): Promise<UserDocument> {
+    const toUpdate = await this.userModel.findById(id).exec();
+    const updated = Object.assign(toUpdate, dto);
+    return await updated.save();
   }
 
-  async delete(email: string): Promise<DeleteResult> {
-    return await this.userRepository.delete({ email: email});
+  async delete(email: string): Promise<any> {
+    return await this.userModel.deleteOne({ email }).exec();
   }
 
-  async findById(id: number): Promise<UserRO>{
-    const user = await this.userRepository.findOne(id);
+  async findById(id: number): Promise<UserRO> {
+    const user = await this.userModel.findById(id).exec();
 
     if (!user) {
-      const errors = {User: ' not found'};
-      throw new HttpException({errors}, 401);
+      const errors = { User: ' not found' };
+      throw new HttpException({ errors }, 401);
     }
 
     return this.buildUserRO(user);
   }
 
-  async findByEmail(email: string): Promise<UserRO>{
-    const user = await this.userRepository.findOne({email: email});
+  async findByEmail(email: string): Promise<UserRO> {
+    const user = await this.userModel.findOne({ email }).exec();
     return this.buildUserRO(user);
   }
 
@@ -113,9 +104,9 @@ export class UserService {
     }, SECRET);
   };
 
-  private buildUserRO(user: UserEntity) {
+  private buildUserRO(user: UserDocument) {
     const userRO = {
-      id: user.id,
+      id: user._id,
       username: user.username,
       email: user.email,
       bio: user.bio,
@@ -123,6 +114,6 @@ export class UserService {
       image: user.image
     };
 
-    return {user: userRO};
+    return { user: userRO };
   }
 }

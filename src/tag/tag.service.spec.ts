@@ -1,57 +1,69 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { getModelToken } from '@nestjs/mongoose';
 import { TagService } from './tag.service';
-import { TagEntity } from './tag.entity';
+import { Tag } from './tag.schema';
 
-const mockRepository = () => ({
-  find: jest.fn(),
-  findOne: jest.fn(),
-  save: jest.fn(),
-  delete: jest.fn(),
+const mockModel = () => ({
+  find: jest.fn().mockReturnValue({ exec: jest.fn() }),
 });
 
 describe('TagService', () => {
   let service: TagService;
-  let tagRepository: jest.Mocked<Repository<TagEntity>>;
+  let tagModel: any;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TagService,
-        { provide: getRepositoryToken(TagEntity), useFactory: mockRepository },
+        { provide: getModelToken(Tag.name), useFactory: mockModel },
       ],
     }).compile();
 
     service = module.get<TagService>(TagService);
-    tagRepository = module.get(getRepositoryToken(TagEntity));
+    tagModel = module.get(getModelToken(Tag.name));
   });
 
   afterEach(() => jest.clearAllMocks());
 
   describe('findAll', () => {
     it('should return an array of all tags', async () => {
-      const tags: TagEntity[] = [
-        { id: 1, tag: 'nestjs' } as TagEntity,
-        { id: 2, tag: 'typescript' } as TagEntity,
-        { id: 3, tag: 'testing' } as TagEntity,
+      const tags = [
+        { _id: '1', tag: 'nestjs' },
+        { _id: '2', tag: 'typescript' },
+        { _id: '3', tag: 'testing' },
       ];
-      tagRepository.find.mockResolvedValue(tags);
+      tagModel.find.mockReturnValue({ exec: jest.fn().mockResolvedValue(tags) });
 
       const result = await service.findAll();
 
       expect(result).toEqual(tags);
       expect(result).toHaveLength(3);
-      expect(tagRepository.find).toHaveBeenCalledTimes(1);
+      expect(tagModel.find).toHaveBeenCalledTimes(1);
     });
 
     it('should return an empty array when no tags exist', async () => {
-      tagRepository.find.mockResolvedValue([]);
+      tagModel.find.mockReturnValue({ exec: jest.fn().mockResolvedValue([]) });
 
       const result = await service.findAll();
 
       expect(result).toEqual([]);
       expect(result).toHaveLength(0);
+    });
+
+    it('should handle database error gracefully', async () => {
+      tagModel.find.mockReturnValue({ exec: jest.fn().mockRejectedValue(new Error('DB connection lost')) });
+
+      await expect(service.findAll()).rejects.toThrow('DB connection lost');
+    });
+
+    it('should return tags with correct structure', async () => {
+      const tags = [{ _id: '1', tag: 'nestjs' }];
+      tagModel.find.mockReturnValue({ exec: jest.fn().mockResolvedValue(tags) });
+
+      const result = await service.findAll();
+
+      expect(result[0]).toHaveProperty('tag', 'nestjs');
+      expect(result[0]).toHaveProperty('_id');
     });
   });
 });

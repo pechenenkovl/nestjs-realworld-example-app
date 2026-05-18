@@ -127,5 +127,75 @@ describe('UserController', () => {
 
       await expect(controller.login(dto)).rejects.toThrow(HttpException);
     });
+
+    it('should throw HttpException with 401 status code specifically', async () => {
+      userService.findOne.mockResolvedValue(null as any);
+
+      const dto = { email: 'wrong@example.com', password: 'password123' };
+
+      try {
+        await controller.login(dto);
+      } catch (e) {
+        expect(e).toBeInstanceOf(HttpException);
+        expect(e.getStatus()).toBe(401);
+      }
+    });
+  });
+
+  // ------- Edge Cases -------
+
+  describe('edge cases', () => {
+    it('findMe should propagate service error', async () => {
+      userService.findByEmail.mockRejectedValue(new HttpException('Not found', 404));
+
+      await expect(controller.findMe('notfound@example.com')).rejects.toThrow(HttpException);
+    });
+
+    it('create should propagate validation error from service', async () => {
+      userService.create.mockRejectedValue(
+        new HttpException({ errors: { username: 'already exists' } }, 422)
+      );
+
+      const dto = { username: 'taken', email: 'taken@example.com', password: 'pass123' };
+      await expect(controller.create(dto)).rejects.toThrow(HttpException);
+    });
+
+    it('update should pass userId and dto correctly to service', async () => {
+      userService.update.mockResolvedValue({} as any);
+
+      const dto = { username: 'newname', email: 'new@example.com', bio: '', image: '' };
+      await controller.update(42, dto);
+
+      expect(userService.update).toHaveBeenCalledWith(42, dto);
+    });
+
+    it('delete should pass slug param to service', async () => {
+      userService.delete.mockResolvedValue({ acknowledged: true, deletedCount: 1 } as any);
+
+      await controller.delete({ slug: 'user-email@example.com' });
+
+      expect(userService.delete).toHaveBeenCalledWith('user-email@example.com');
+    });
+
+    it('login should include all user fields in response', async () => {
+      const user = {
+        id: 1,
+        username: 'testuser',
+        email: 'test@example.com',
+        bio: 'bio text',
+        image: 'http://img.url',
+        password: 'hashed',
+      };
+      userService.findOne.mockResolvedValue(user as any);
+      userService.generateJWT.mockReturnValue('new-jwt-token');
+
+      const result = await controller.login({ email: 'test@example.com', password: 'pass' });
+
+      expect(result.user.username).toBe('testuser');
+      expect(result.user.email).toBe('test@example.com');
+      expect(result.user.bio).toBe('bio text');
+      expect(result.user.image).toBe('http://img.url');
+      expect(result.user.token).toBe('new-jwt-token');
+    });
   });
 });

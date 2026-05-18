@@ -1,8 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ArticleController } from './article.controller';
 import { ArticleService } from './article.service';
-import { ArticleEntity } from './article.entity';
-import { DeleteResult } from 'typeorm';
 
 const mockArticleService = () => ({
   findAll: jest.fn(),
@@ -34,19 +32,21 @@ describe('ArticleController', () => {
 
   afterEach(() => jest.clearAllMocks());
 
-  const createArticle = (overrides = {}): ArticleEntity => {
-    const article = new ArticleEntity();
-    article.id = 1;
-    article.slug = 'test-article-abc';
-    article.title = 'Test Article';
-    article.description = 'A description';
-    article.body = 'Body text';
-    article.tagList = ['nestjs'];
-    article.comments = [];
-    article.favoriteCount = 0;
-    article.created = new Date('2025-01-01');
-    article.updated = new Date('2025-01-01');
-    Object.assign(article, overrides);
+  const createArticle = (overrides = {}): any => {
+    const article = {
+      _id: '507f1f77bcf86cd799439011',
+      slug: 'test-article-abc',
+      title: 'Test Article',
+      description: 'A description',
+      body: 'Body text',
+      tagList: ['nestjs'],
+      comments: [],
+      favoriteCount: 0,
+      author: '507f1f77bcf86cd799439022',
+      createdAt: new Date('2025-01-01'),
+      updatedAt: new Date('2025-01-01'),
+      ...overrides,
+    };
     return article;
   };
 
@@ -127,7 +127,7 @@ describe('ArticleController', () => {
 
   describe('delete', () => {
     it('should delete article by slug', async () => {
-      const deleteResult: DeleteResult = { affected: 1, raw: {} };
+      const deleteResult = { acknowledged: true, deletedCount: 1 };
       articleService.delete.mockResolvedValue(deleteResult);
 
       const result = await controller.delete({ slug: 'test-article-abc' });
@@ -204,6 +204,81 @@ describe('ArticleController', () => {
 
       expect(result.article.favoriteCount).toBe(0);
       expect(articleService.unFavorite).toHaveBeenCalledWith(1, 'test-article-abc');
+    });
+  });
+
+  // ------- Edge Cases -------
+
+  describe('edge cases', () => {
+    it('findAll should pass empty query when no filters provided', async () => {
+      articleService.findAll.mockResolvedValue({ articles: [], articlesCount: 0 });
+
+      const result = await controller.findAll({});
+
+      expect(result.articlesCount).toBe(0);
+      expect(articleService.findAll).toHaveBeenCalledWith({});
+    });
+
+    it('findOne should return null article when slug not found', async () => {
+      articleService.findOne.mockResolvedValue({ article: null });
+
+      const result = await controller.findOne('nonexistent-slug');
+
+      expect(result.article).toBeNull();
+    });
+
+    it('getFeed should handle empty feed', async () => {
+      articleService.findFeed.mockResolvedValue({ articles: [], articlesCount: 0 });
+
+      const result = await controller.getFeed(1, {});
+
+      expect(result.articles).toHaveLength(0);
+      expect(result.articlesCount).toBe(0);
+    });
+
+    it('findComments should handle article with no comments', async () => {
+      articleService.findComments.mockResolvedValue({ comments: [] });
+
+      const result = await controller.findComments('test-article-abc');
+
+      expect(result.comments).toHaveLength(0);
+    });
+
+    it('create should propagate service errors', async () => {
+      articleService.create.mockRejectedValue(new Error('DB error'));
+
+      const dto = { title: 'Test', description: 'desc', body: 'body', tagList: [] };
+      await expect(controller.create(1, dto)).rejects.toThrow('DB error');
+    });
+
+    it('delete should propagate service errors', async () => {
+      articleService.delete.mockRejectedValue(new Error('Not authorized'));
+
+      await expect(controller.delete({ slug: 'test' })).rejects.toThrow('Not authorized');
+    });
+
+    it('favorite should pass userId and slug correctly', async () => {
+      articleService.favorite.mockResolvedValue({ article: createArticle() });
+
+      await controller.favorite(42, 'my-article-slug');
+
+      expect(articleService.favorite).toHaveBeenCalledWith(42, 'my-article-slug');
+    });
+
+    it('createComment should pass slug and comment data correctly', async () => {
+      articleService.addComment.mockResolvedValue({ article: createArticle() });
+
+      await controller.createComment('some-slug', { body: 'My comment' });
+
+      expect(articleService.addComment).toHaveBeenCalledWith('some-slug', { body: 'My comment' });
+    });
+
+    it('deleteComment should extract slug and id from params', async () => {
+      articleService.deleteComment.mockResolvedValue({ article: createArticle() });
+
+      await controller.deleteComment({ slug: 'article-slug', id: '123' });
+
+      expect(articleService.deleteComment).toHaveBeenCalledWith('article-slug', '123');
     });
   });
 });

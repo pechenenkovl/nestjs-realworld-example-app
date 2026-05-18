@@ -77,4 +77,40 @@ describe('ProfileController', () => {
       expect(profileService.unFollow).toHaveBeenCalledWith(1, 'targetuser');
     });
   });
+
+  // ------- Edge Cases -------
+
+  describe('edge cases', () => {
+    it('getProfile should return undefined when profile does not exist', async () => {
+      profileService.findProfile.mockResolvedValue(undefined as any);
+
+      const result = await controller.getProfile(1, 'nonexistent');
+
+      expect(result).toBeUndefined();
+    });
+
+    it('follow should propagate service errors', async () => {
+      profileService.follow.mockRejectedValue(
+        new Error('FollowerEmail and FollowingId cannot be equal.')
+      );
+
+      await expect(controller.follow('self@test.com', 'selfuser')).rejects.toThrow();
+    });
+
+    it('unFollow should propagate service errors', async () => {
+      profileService.unFollow.mockRejectedValue(
+        new Error('FollowerId and FollowingId cannot be equal.')
+      );
+
+      await expect(controller.unFollow(1, 'selfuser')).rejects.toThrow();
+    });
+
+    it('getProfile should pass userId and username to service', async () => {
+      profileService.findProfile.mockResolvedValue(mockProfileRO);
+
+      await controller.getProfile(42, 'someuser');
+
+      expect(profileService.findProfile).toHaveBeenCalledWith(42, 'someuser');
+    });
+  });
 });

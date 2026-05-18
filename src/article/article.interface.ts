@@ -1,5 +1,6 @@
 import { UserData } from '../user/user.interface';
-import { ArticleEntity } from './article.entity';
+import { ArticleDocument } from './article.schema';
+
 interface Comment {
   body: string;
 }
@@ -22,11 +23,11 @@ export interface CommentsRO {
 }
 
 export interface ArticleRO {
-  article: ArticleEntity;
+  article: ArticleDocument;
 }
 
 export interface ArticlesRO {
-  articles: ArticleEntity[];
+  articles: ArticleDocument[];
   articlesCount: number;
 }
 

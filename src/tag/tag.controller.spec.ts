@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TagController } from './tag.controller';
 import { TagService } from './tag.service';
-import { TagEntity } from './tag.entity';
 
 const mockTagService = () => ({
   findAll: jest.fn(),
@@ -23,17 +22,12 @@ describe('TagController', () => {
 
   describe('findAll', () => {
     it('should return an array of tags', async () => {
-      const tags: TagEntity[] = [];
-      const createTag = (id, name) => {
-        const tag = new TagEntity();
-        tag.id = id;
-        tag.tag = name;
-        return tag;
-      };
-      tags.push(createTag(1, 'angularjs'));
-      tags.push(createTag(2, 'reactjs'));
+      const tags = [
+        { _id: '1', tag: 'angularjs' },
+        { _id: '2', tag: 'reactjs' },
+      ];
 
-      tagService.findAll.mockResolvedValue(tags);
+      tagService.findAll.mockResolvedValue(tags as any);
 
       const findAllResult = await tagController.findAll();
       expect(findAllResult).toBe(tags);
@@ -44,6 +38,12 @@ describe('TagController', () => {
 
       const result = await tagController.findAll();
       expect(result).toEqual([]);
+    });
+
+    it('should propagate service errors', async () => {
+      tagService.findAll.mockRejectedValue(new Error('Service unavailable'));
+
+      await expect(tagController.findAll()).rejects.toThrow('Service unavailable');
     });
   });
 });
