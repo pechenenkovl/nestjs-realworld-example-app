@@ -14,6 +14,7 @@ import { User } from '../user/user.decorator';
 import {
   ApiBody,
   ApiBearerAuth,
+  ApiParam,
   ApiResponse,
   ApiOperation, ApiTags,
 } from '@nestjs/swagger';
@@ -41,11 +42,13 @@ export class ArticleController {
     return await this.articleService.findFeed(userId, query);
   }
 
+  @ApiParam({ name: 'slug', type: String })
   @Get(':slug')
   async findOne(@Param('slug') slug): Promise<ArticleRO> {
     return await this.articleService.findOne({slug});
   }
 
+  @ApiParam({ name: 'slug', type: String })
   @Get(':slug/comments')
   async findComments(@Param('slug') slug): Promise<CommentsRO> {
     return await this.articleService.findComments(slug);
@@ -63,6 +66,7 @@ export class ArticleController {
   @ApiOperation({ summary: 'Update article' })
   @ApiResponse({ status: 201, description: 'The article has been successfully updated.'})
   @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiParam({ name: 'slug', type: String })
   @Put(':slug')
   @ApiBody({ type: CreateArticleRequestDto })
   async update(@Param() params, @Body('article') articleData: CreateArticleDto) {
@@ -73,6 +77,7 @@ export class ArticleController {
   @ApiOperation({ summary: 'Delete article' })
   @ApiResponse({ status: 201, description: 'The article has been successfully deleted.'})
   @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiParam({ name: 'slug', type: String })
   @Delete(':slug')
   async delete(@Param() params) {
     return this.articleService.delete(params.slug);
@@ -81,6 +86,7 @@ export class ArticleController {
   @ApiOperation({ summary: 'Create comment' })
   @ApiResponse({ status: 201, description: 'The comment has been successfully created.'})
   @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiParam({ name: 'slug', type: String })
   @Post(':slug/comments')
   @ApiBody({ type: CreateCommentRequestDto })
   async createComment(@Param('slug') slug, @Body('comment') commentData: CreateCommentDto) {
@@ -90,6 +96,8 @@ export class ArticleController {
   @ApiOperation({ summary: 'Delete comment' })
   @ApiResponse({ status: 201, description: 'The article has been successfully deleted.'})
   @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiParam({ name: 'slug', type: String })
+  @ApiParam({ name: 'id', type: String })
   @Delete(':slug/comments/:id')
   async deleteComment(@Param() params) {
     const {slug, id} = params;
@@ -99,6 +107,7 @@ export class ArticleController {
   @ApiOperation({ summary: 'Favorite article' })
   @ApiResponse({ status: 201, description: 'The article has been successfully favorited.'})
   @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiParam({ name: 'slug', type: String })
   @Post(':slug/favorite')
   async favorite(@User('id') userId: number, @Param('slug') slug) {
     return await this.articleService.favorite(userId, slug);
@@ -107,6 +116,7 @@ export class ArticleController {
   @ApiOperation({ summary: 'Unfavorite article' })
   @ApiResponse({ status: 201, description: 'The article has been successfully unfavorited.'})
   @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiParam({ name: 'slug', type: String })
   @Delete(':slug/favorite')
   async unFavorite(@User('id') userId: number, @Param('slug') slug) {
     return await this.articleService.unFavorite(userId, slug);
